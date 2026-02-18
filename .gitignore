@@ -1,0 +1,43 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.env*/
+.venv/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Debug / Generated output
+# =========================
+debug/
+output.jpg
+output.png
+*.log
+
+# =========================
+# Input images (optional)
+# =========================
+input.jpg
+input.png
+*.jpeg
+*.JPG
+*.PNG
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
