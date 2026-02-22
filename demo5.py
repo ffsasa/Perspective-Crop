@@ -17,7 +17,6 @@ def order_points(pts):
     return rect
 
 
-
 # =========================
 # Perspective transform
 # =========================
@@ -116,48 +115,49 @@ def process(image_path):
     # =========================
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # White
     white_mask = cv2.inRange(
         hsv,
         (0, 0, 150),
         (180, 80, 255)
     )
 
-    # Red range 1
-    red_mask1 = cv2.inRange(
-        hsv,
-        (0, 40, 80),
-        (15, 255, 255)
-    )
-
-    # Red range 2
-    red_mask2 = cv2.inRange(
-        hsv,
-        (165, 40, 80),
-        (180, 255, 255)
-    )
-
-    red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
-    # Combine white + red
-    color_mask = cv2.bitwise_or(white_mask, red_mask)
-
-    cv2.imwrite("debug/4_color_mask.jpg", color_mask)
+    cv2.imwrite("debug/4_white_mask.jpg", white_mask)
 
     # =========================
-    # Combine masks
+    # Kiểm tra xem trung tâm có chủ yếu trắng không
     # =========================
-    mask = cv2.bitwise_and(mask_energy, white_mask)
-    cv2.imwrite("debug/5_combined.jpg", mask)
+    h, w = white_mask.shape
+
+    y1 = int(h * 0.2)
+    y2 = int(h * 0.8)
+    x1 = int(w * 0.2)
+    x2 = int(w * 0.8)
+
+    center_region = white_mask[y1:y2, x1:x2]
+
+    white_ratio = np.sum(center_region > 0) / center_region.size
+
+    print("White ratio (center region):", white_ratio)
 
     # =========================
-    # Morph close
+    # Áp dụng theo yêu cầu
     # =========================
     kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (15,20)
+        cv2.MORPH_ELLIPSE, (15, 20)
     )
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    cv2.imwrite("debug/6_after_close.jpg", mask)
+
+    if white_ratio > 0.6:
+        # Case nhiều trắng → dùng white mask + MORPH_CLOSE
+        mask = cv2.bitwise_and(mask_energy, white_mask)
+        print("Using WHITE mask + MORPH_CLOSE")
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    else:
+        # Case còn lại → không dùng white mask + MORPH_BLACKHAT
+        mask = mask_energy.copy()
+        print("Using TEXTURE only + MORPH_BLACKHAT")
+        mask = cv2.morphologyEx(mask, cv2.MORPH_BLACKHAT, kernel)
+
+    cv2.imwrite("debug/5_after_morph.jpg", mask)
 
     # =========================
     # Find contours
@@ -170,7 +170,7 @@ def process(image_path):
 
     contour_img = image.copy()
     cv2.drawContours(contour_img, contours, -1, (0, 255, 0), 2)
-    cv2.imwrite("debug/7_all_contours.jpg", contour_img)
+    cv2.imwrite("debug/6_all_contours.jpg", contour_img)
 
     if not contours:
         raise Exception("Không tìm thấy contour")
@@ -179,20 +179,20 @@ def process(image_path):
 
     valid_contours = [
         c for c in contours
-        if cv2.contourArea(c) > 0.01 * image_area
+        if cv2.contourArea(c) > 0.000005 * image_area
         and not near_border(c, image.shape[0], image.shape[1])
     ]
 
     if not valid_contours:
         raise Exception("Không có contour hợp lệ")
 
-    # Lấy merge contour
+    # Merge contour
     merged = np.vstack(valid_contours)
     contour = cv2.convexHull(merged)
 
     contour_big = image.copy()
     cv2.drawContours(contour_big, [contour], -1, (0, 0, 255), 3)
-    cv2.imwrite("debug/8_largest_contour.jpg", contour_big)
+    cv2.imwrite("debug/7_largest_contour.jpg", contour_big)
 
     # =========================
     # Approx polygon
@@ -211,7 +211,7 @@ def process(image_path):
     for p in quad:
         cv2.circle(quad_debug, (int(p[0]), int(p[1])), 10, (0, 0, 255), -1)
 
-    cv2.imwrite("debug/9_quad.jpg", quad_debug)
+    cv2.imwrite("debug/8_quad.jpg", quad_debug)
 
     # =========================
     # Warp
@@ -232,7 +232,7 @@ def process(image_path):
 
     cv2.imwrite("output.jpg", warped)
 
-    print("v5.1 hoàn thành – kiểm tra thư mục debug/")
+    print("v5.2 hoàn thành – kiểm tra thư mục debug/")
 
 
 # =========================
