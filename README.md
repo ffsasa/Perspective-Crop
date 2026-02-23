@@ -28,7 +28,3 @@ Instead of relying only on edge detection, the final version uses:
 
 This makes the detection more stable and robust compared to pure Canny/Hough-based approaches.
 
----
-
-## 📂 Project Structure
-
