@@ -45,35 +45,72 @@ def four_point_transform(image, pts):
 
     return warped
 
+
+# =========================
+# Unicode-safe IO
+# =========================
 def imread_unicode(path):
     stream = np.fromfile(path, dtype=np.uint8)
     img = cv2.imdecode(stream, cv2.IMREAD_COLOR)
     return img
 
+
+def imwrite_unicode(path, image):
+    ext = os.path.splitext(path)[1]
+    result, encoded = cv2.imencode(ext, image)
+    if result:
+        encoded.tofile(path)
+
+
+# =========================
+# Phân loại trắng (TK) / hồng (XX)
+# =========================
+def is_white_page(image):
+    """
+    Phân biệt dựa trên hue + saturation.
+    Trang hồng có hue đỏ và saturation cao hơn rõ rệt.
+    """
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    h = hsv[:, :, 0]
+    s = hsv[:, :, 1]
+
+    # vùng màu đỏ / hồng
+    pink_mask = ((h < 15) | (h > 160)) & (s > 40)
+
+    pink_ratio = np.sum(pink_mask) / pink_mask.size
+
+    # nếu nhiều pixel hồng -> là XX
+    if pink_ratio > 0.1:
+        return False  # XX
+
+    return True  # TK
+
+
 # =========================
 # Core xử lý 1 ảnh
 # =========================
-def process_image(input_path, output_path):
+def process_image(input_path, output_dir):
 
     original = imread_unicode(input_path)
     if original is None:
         print(f"Không đọc được ảnh: {input_path}")
         return
 
+    # ===== GIỮ NGUYÊN LOGIC PERSPECTIVE =====
     scale_height = 1200
     ratio = original.shape[0] / scale_height
     image = cv2.resize(original, (int(original.shape[1] / ratio), scale_height))
-    image_blur = cv2.GaussianBlur(image, (5,5), 0)
+    image_blur = cv2.GaussianBlur(image, (5, 5), 0)
 
-    # GrabCut
     mask = np.full(image.shape[:2], cv2.GC_PR_BGD, np.uint8)
     h, w = image.shape[:2]
 
-    rect = (int(w*0.05), int(h*0.05),
-            int(w*0.9), int(h*0.9))
+    rect = (int(w * 0.05), int(h * 0.05),
+            int(w * 0.9), int(h * 0.9))
 
-    bgModel = np.zeros((1,65), np.float64)
-    fgModel = np.zeros((1,65), np.float64)
+    bgModel = np.zeros((1, 65), np.float64)
+    fgModel = np.zeros((1, 65), np.float64)
 
     cv2.grabCut(image_blur, mask, rect, bgModel, fgModel, 5, cv2.GC_INIT_WITH_RECT)
 
@@ -81,8 +118,7 @@ def process_image(input_path, output_path):
         (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
         255, 0).astype('uint8')
 
-    # Morphology
-    kernel = np.ones((5,5), np.uint8)
+    kernel = np.ones((5, 5), np.uint8)
     mask2 = cv2.morphologyEx(mask2, cv2.MORPH_OPEN, kernel, iterations=1)
 
     contours, _ = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -93,7 +129,7 @@ def process_image(input_path, output_path):
 
     contour = max(contours, key=cv2.contourArea)
 
-    if cv2.contourArea(contour) < 0.1 * (h*w):
+    if cv2.contourArea(contour) < 0.1 * (h * w):
         print(f"Contour quá nhỏ: {input_path}")
         return
 
@@ -101,7 +137,7 @@ def process_image(input_path, output_path):
     approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
 
     if len(approx) == 4:
-        quad = order_points(approx.reshape(4,2))
+        quad = order_points(approx.reshape(4, 2))
     else:
         hull = cv2.convexHull(contour)
         rect = cv2.minAreaRect(hull)
@@ -111,15 +147,27 @@ def process_image(input_path, output_path):
     quad *= ratio
 
     warped = four_point_transform(original, quad)
+    # ===== KẾT THÚC LOGIC GỐC =====
 
-    def imwrite_unicode(path, image):
-        ext = os.path.splitext(path)[1]
-        result, encoded = cv2.imencode(ext, image)
-        if result:
-            encoded.tofile(path)
+    # =========================
+    # Đổi tên file theo nghiệp vụ
+    # =========================
+    if is_white_page(warped):
+        filename = "TK.jpg"
+    else:
+        filename = "XX.jpg"
 
-    imwrite_unicode(output_path, warped)
-    print(f"Đã xử lý: {input_path}")
+    final_path = os.path.join(output_dir, filename)
+
+    # không được có 2 TK hoặc 2 XX
+    if os.path.exists(final_path):
+        print(f"LỖI LOGIC: {filename} đã tồn tại trong {output_dir}")
+        print(f"Ảnh gây lỗi: {input_path}")
+        return
+
+    imwrite_unicode(final_path, warped)
+
+    print(f"Đã xử lý: {input_path} -> {filename}")
 
 
 # =========================
@@ -129,23 +177,20 @@ def process_folder(input_root, output_root):
 
     for root, dirs, files in os.walk(input_root):
 
-        # Tạo path tương ứng trong output
         relative_path = os.path.relpath(root, input_root)
         output_dir = os.path.join(output_root, relative_path)
 
         os.makedirs(output_dir, exist_ok=True)
 
-        for file in files:
+        image_files = [f for f in files if f.lower().endswith((".jpg", ".jpeg", ".png"))]
 
-            if file.lower().endswith((".jpg", ".jpeg", ".png")):
+        for file in image_files:
+            input_path = os.path.join(root, file)
 
-                input_path = os.path.join(root, file)
-                output_path = os.path.join(output_dir, file)
-
-                try:
-                    process_image(input_path, output_path)
-                except Exception as e:
-                    print(f"Lỗi với {input_path}: {e}")
+            try:
+                process_image(input_path, output_dir)
+            except Exception as e:
+                print(f"Lỗi với {input_path}: {e}")
 
 
 # =========================
