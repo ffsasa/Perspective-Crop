@@ -132,4 +132,4 @@ def process(image_path):
 # RUN
 # =========================
 if __name__ == "__main__":
-    process("input.jpg")
+    process("input5.jpg")
