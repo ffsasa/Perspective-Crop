@@ -1,3 +1,3 @@
-label=XX
-grabcut_iters=2
-kernel_size=9
+label=TK
+area_ratio_pass1=0.6293
+method=LARGE_NO_TRIM
