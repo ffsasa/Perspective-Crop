@@ -1,5 +1,26 @@
+import os
 import cv2
 import numpy as np
+
+
+# =========================
+# Unicode-safe IO
+# =========================
+def imread_unicode(path):
+    data = np.fromfile(path, dtype=np.uint8)
+    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    return img
+
+
+def imwrite_unicode(path, img):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == "":
+        ext = ".jpg"
+        path = path + ext
+    ok, buf = cv2.imencode(ext, img)
+    if not ok:
+        raise Exception(f"Không thể encode ảnh để ghi: {path}")
+    buf.tofile(path)
 
 
 # =========================
@@ -58,7 +79,7 @@ def classify_center_color(bgr_img):
 
 
 # =========================
-# GrabCut helper (FIXED)
+# GrabCut helper (FIXED) - bám logic bạn đưa
 # =========================
 def run_grabcut(small_bgr, iters=1, hard_bg_bottom=False, debug=False):
     h, w = small_bgr.shape[:2]
@@ -71,18 +92,18 @@ def run_grabcut(small_bgr, iters=1, hard_bg_bottom=False, debug=False):
     fgdModel = np.zeros((1, 65), np.float64)
 
     mask = np.zeros((h, w), np.uint8)
-    cv2.grabCut(small_bgr, mask, rect, bgdModel, fgdModel, 1, cv2.GC_INIT_WITH_RECT)
+    cv2.grabCut(small_bgr, mask, rect, bgdModel, fgdModel, iters, cv2.GC_INIT_WITH_RECT)
 
     # --- AUTO: chỉ xử lý đáy nếu thật sự có "tail" bám đáy
     if hard_bg_bottom:
         fg0 = ((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)).astype(np.uint8)
-        bottom_band = fg0[int(h*0.92):, :]   # 8% đáy
-        bottom_fill = float(bottom_band.mean())  # tỉ lệ foreground ở đáy
+        bottom_band = fg0[int(h * 0.92):, :]          # 8% đáy
+        bottom_fill = float(bottom_band.mean())       # tỉ lệ foreground ở đáy
 
         # nếu foreground ở đáy quá nhiều => đang dính nền => ép đáy mạnh hơn
         if bottom_fill > 0.25:
-            y0 = int(h * 0.86)               # ép nhiều hơn (14% đáy)
-            mask[y0:, :] = cv2.GC_BGD        # mạnh hẳn (BG cứng)
+            y0 = int(h * 0.86)                        # ép nhiều hơn (14% đáy)
+            mask[y0:, :] = cv2.GC_BGD                 # BG cứng
             cv2.grabCut(small_bgr, mask, None, bgdModel, fgdModel, 1, cv2.GC_INIT_WITH_MASK)
         else:
             # bình thường: ép rất ít và mềm (giữ chữ ký nếu có)
@@ -96,9 +117,7 @@ def run_grabcut(small_bgr, iters=1, hard_bg_bottom=False, debug=False):
     kernel = np.ones((k, k), np.uint8)
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    if debug:
-        cv2.imwrite("debug_fg_mask.jpg", fg)
-
+    # debug bị vô hiệu theo yêu cầu (không ghi file)
     return fg
 
 
@@ -172,13 +191,37 @@ def pad_bottom(box, pad_ratio=0.03, max_px=40):
 
     return np.array([tl, tr, br2, bl2], dtype=np.float32)
 
+def pad_top(box, pad_ratio=0.03, max_px=40):
+    box = order_points(box.astype(np.float32))
+    tl, tr, br, bl = box
+
+    # chiều cao ước lượng
+    h1 = np.linalg.norm(bl - tl)
+    h2 = np.linalg.norm(br - tr)
+    h = max(h1, h2)
+
+    pad = min(max_px, pad_ratio * h)
+
+    # hướng lên (ngược hướng xuống)
+    v_left = tl - bl
+    v_right = tr - br
+    v_left = v_left / (np.linalg.norm(v_left) + 1e-6)
+    v_right = v_right / (np.linalg.norm(v_right) + 1e-6)
+
+    tl2 = tl + v_left * pad
+    tr2 = tr + v_right * pad
+
+    return np.array([tl2, tr2, br, bl], dtype=np.float32)
+
+
 # =========================
-# Main
+# Main detect (bám logic bạn đưa, chỉ đổi imread + debug off)
 # =========================
-def detect_document(image_path, debug=True):
-    original = cv2.imread(image_path)
+def detect_document(image_path, debug=False):
+    # CHỈ đổi IO đọc ảnh để hỗ trợ unicode path
+    original = imread_unicode(image_path)
     if original is None:
-        raise Exception("Không đọc được ảnh")
+        raise Exception(f"Không đọc được ảnh: {image_path}")
 
     # Downscale
     target_h = 700
@@ -202,7 +245,7 @@ def detect_document(image_path, debug=True):
         box = minarea_box_from_mask(comp1)
         comp_final = comp1
         box_final = box
-        method = "LARGE_NO_TRIM"
+        # method = "LARGE_NO_TRIM"
     else:
         # ===== Nhánh B: giấy nhỏ - hard BG ở đáy + trim tail
         fg2 = run_grabcut(small, iters=1, hard_bg_bottom=True, debug=False)
@@ -213,31 +256,94 @@ def detect_document(image_path, debug=True):
         comp_trim, box_trim = trim_tail_by_rectmask(comp2)
         comp_final = comp_trim
         box_final = box_trim
-        method = "SMALL_BG_BOTTOM_TRIM"
+        # method = "SMALL_BG_BOTTOM_TRIM"
 
     if box_final is None:
         raise Exception("Không tìm được box")
 
-    # Debug
-    if debug:
-        dbg = small.copy()
-        cv2.drawContours(dbg, [box_final.astype(int)], -1, (0, 255, 0), 3)
-        cv2.imwrite("debug_component_best.jpg", comp_final)
-        cv2.imwrite("debug_detected_box.jpg", dbg)
-        with open("debug_info.txt", "w", encoding="utf-8") as f:
-            f.write(f"label={label}\n")
-            f.write(f"area_ratio_pass1={area_ratio1:.4f}\n")
-            f.write(f"method={method}\n")
+    # Debug: bị vô hiệu theo yêu cầu (không ghi file)
+    # if debug: ...
 
     # Warp back to original
     box_final *= ratio
-    box_final = pad_bottom(box_final, pad_ratio=0.03, max_px=40)
+    box_final = pad_top(box_final, pad_ratio=0.05, max_px=150)
+    box_final = pad_bottom(box_final, pad_ratio=0.05, max_px=150)
+
     warped = four_point_transform(original, box_final)
 
     return warped, label
 
+
+# =========================
+# Batch folder IO (giữ cấu trúc thư mục như demo4.6)
+# =========================
+VALID_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+
+def is_image_file(path: str) -> bool:
+    return os.path.splitext(path)[1].lower() in VALID_EXTS
+
+
+def ensure_dir(path: str):
+    os.makedirs(path, exist_ok=True)
+
+
+def process_one_image(in_path: str, out_dir: str):
+    ensure_dir(out_dir)
+    warped, label = detect_document(in_path, debug=False)
+
+    out_path = os.path.join(out_dir, f"{label}.jpg")  # XX.jpg hoặc TK.jpg
+
+    # Tránh đè file: nếu trong folder đã có XX.jpg/TK.jpg thì báo lỗi (đúng tinh thần demo4.6)
+    if os.path.exists(out_path):
+        raise FileExistsError(f"Đã tồn tại {out_path} (trùng nhãn {label} trong cùng folder output)")
+
+    imwrite_unicode(out_path, warped)
+    return out_path, label
+
+
+def process_folder(input_root: str, output_root: str):
+    input_root = os.path.abspath(input_root)
+    output_root = os.path.abspath(output_root)
+    ensure_dir(output_root)
+
+    ok = 0
+    err = 0
+    errors = []
+
+    for dirpath, _, filenames in os.walk(input_root):
+        rel = os.path.relpath(dirpath, input_root)
+        out_dir = output_root if rel == "." else os.path.join(output_root, rel)
+
+        for fn in filenames:
+            in_path = os.path.join(dirpath, fn)
+            if not is_image_file(in_path):
+                continue
+
+            try:
+                out_path, label = process_one_image(in_path, out_dir)
+                ok += 1
+                print(f"[OK] {in_path} -> {out_path}")
+            except Exception as e:
+                err += 1
+                errors.append((in_path, str(e)))
+                print(f"[ERR] {in_path} :: {e}")
+
+    print("\n===== TỔNG KẾT =====")
+    print(f"OK: {ok}")
+    print(f"Lỗi: {err}")
+    if errors:
+        print("\nDanh sách lỗi:")
+        for p, msg in errors:
+            print(f"- {p}: {msg}")
+
+
 if __name__ == "__main__":
-    warped, label = detect_document("input6.jpg", debug=True)
-    out_name = f"{label}.jpg"  # XX.jpg / TK.jpg
-    cv2.imwrite(out_name, warped)
-    print("Detect + Perspective thành công ->", out_name)
+    input_folder = input("Nhập đường dẫn folder input: ").strip().strip('"').strip("'")
+    output_folder = input("Nhập đường dẫn folder output: ").strip().strip('"').strip("'")
+
+    if not os.path.isdir(input_folder):
+        print("Folder input không tồn tại.")
+        raise SystemExit(1)
+
+    process_folder(input_folder, output_folder)

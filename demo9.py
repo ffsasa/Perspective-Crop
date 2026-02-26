@@ -231,13 +231,13 @@ def detect_document(image_path, debug=True):
 
     # Warp back to original
     box_final *= ratio
-    box_final = pad_bottom(box_final, pad_ratio=0.03, max_px=40)
+    box_final = pad_bottom(box_final, pad_ratio=0.05, max_px=150)
     warped = four_point_transform(original, box_final)
 
     return warped, label
 
 if __name__ == "__main__":
-    warped, label = detect_document("input6.jpg", debug=True)
+    warped, label = detect_document("input12.jpg", debug=True)
     out_name = f"{label}.jpg"  # XX.jpg / TK.jpg
     cv2.imwrite(out_name, warped)
     print("Detect + Perspective thành công ->", out_name)
