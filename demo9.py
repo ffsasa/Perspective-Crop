@@ -150,27 +150,51 @@ def trim_tail_by_rectmask(comp_mask):
     return comp2, box2
 
 
-def pad_bottom(box, pad_ratio=0.03, max_px=40):
+def pad_box(box,
+            pad_top=0.05, pad_bottom=0.05,
+            pad_left=0.025, pad_right=0.025,
+            max_px_tb=150,   # top-bottom max
+            max_px_lr=100):  # left-right max
+
     box = order_points(box.astype(np.float32))
     tl, tr, br, bl = box
 
-    # chiều cao ước lượng
-    h1 = np.linalg.norm(bl - tl)
-    h2 = np.linalg.norm(br - tr)
-    h = max(h1, h2)
-
-    pad = min(max_px, pad_ratio * h)
-
-    # hướng xuống
+    # ===== Vector dọc =====
     v_left = bl - tl
     v_right = br - tr
-    v_left = v_left / (np.linalg.norm(v_left) + 1e-6)
-    v_right = v_right / (np.linalg.norm(v_right) + 1e-6)
 
-    bl2 = bl + v_left * pad
-    br2 = br + v_right * pad
+    h1 = np.linalg.norm(v_left)
+    h2 = np.linalg.norm(v_right)
+    h = max(h1, h2)
 
-    return np.array([tl, tr, br2, bl2], dtype=np.float32)
+    v_left /= (h1 + 1e-6)
+    v_right /= (h2 + 1e-6)
+
+    # ===== Vector ngang =====
+    v_top = tr - tl
+    v_bottom = br - bl
+
+    w1 = np.linalg.norm(v_top)
+    w2 = np.linalg.norm(v_bottom)
+    w = max(w1, w2)
+
+    v_top /= (w1 + 1e-6)
+    v_bottom /= (w2 + 1e-6)
+
+    # ===== Tính pixel pad =====
+    pt = min(max_px_tb, pad_top * h)
+    pb = min(max_px_tb, pad_bottom * h)
+    pl = min(max_px_lr, pad_left * w)
+    pr = min(max_px_lr, pad_right * w)
+
+    # ===== Áp dụng pad =====
+    tl2 = tl - v_left * pt - v_top * pl
+    tr2 = tr - v_right * pt + v_top * pr
+    br2 = br + v_right * pb + v_bottom * pr
+    bl2 = bl + v_left * pb - v_bottom * pl
+
+    return np.array([tl2, tr2, br2, bl2], dtype=np.float32)
+
 
 # =========================
 # Main
@@ -231,13 +255,22 @@ def detect_document(image_path, debug=True):
 
     # Warp back to original
     box_final *= ratio
-    box_final = pad_bottom(box_final, pad_ratio=0.05, max_px=150)
+    box_final = pad_box(
+        box_final,
+        pad_top=0.03,
+        pad_bottom=0.03,
+        pad_left=0.025,
+        pad_right=0.025,
+        max_px_tb=50,
+        max_px_lr=50
+    )
+
     warped = four_point_transform(original, box_final)
 
     return warped, label
 
 if __name__ == "__main__":
-    warped, label = detect_document("input12.jpg", debug=True)
+    warped, label = detect_document("input16.jpg", debug=True)
     out_name = f"{label}.jpg"  # XX.jpg / TK.jpg
     cv2.imwrite(out_name, warped)
     print("Detect + Perspective thành công ->", out_name)
