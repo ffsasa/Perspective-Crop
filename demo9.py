@@ -270,7 +270,7 @@ def detect_document(image_path, debug=True):
     return warped, label
 
 if __name__ == "__main__":
-    warped, label = detect_document("input16.jpg", debug=True)
+    warped, label = detect_document("input19.jpg", debug=True)
     out_name = f"{label}.jpg"  # XX.jpg / TK.jpg
     cv2.imwrite(out_name, warped)
     print("Detect + Perspective thành công ->", out_name)
