@@ -91,17 +91,25 @@ def four_point_transform(image, pts):
 # =========================
 def classify_center_color(bgr_img):
     h, w = bgr_img.shape[:2]
+
     cx1, cx2 = int(w * 0.40), int(w * 0.60)
     cy1, cy2 = int(h * 0.40), int(h * 0.60)
     patch = bgr_img[cy1:cy2, cx1:cx2]
 
-    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
-    H = hsv[..., 0].astype(np.float32)
-    S = hsv[..., 1].astype(np.float32)
+    # Chuyển sang float
+    patch = patch.astype("float32")
 
-    pink_mask = ((H >= 150) | (H <= 10)) & (S >= 25)
-    pink_ratio = float(np.mean(pink_mask))
-    return ("XX" if pink_ratio > 0.10 else "TK")
+    B = patch[..., 0]
+    G = patch[..., 1]
+    R = patch[..., 2]
+
+    # Đo độ lệch màu (distance giữa các kênh)
+    color_variation = np.mean(
+        np.abs(R - G) + np.abs(R - B) + np.abs(G - B)
+    )
+
+    # Nếu gần như không lệch màu → trắng → TK
+    return "TK" if color_variation < 25 else "XX"
 
 # =========================
 # Mask helpers (từ YOLO bản của bạn)

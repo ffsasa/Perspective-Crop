@@ -1,1 +1,1 @@
-label=TK\nbest_reason=poly5_extend_recover_missing_corner\nconf=0.9677\npoly_n=5\npoly_angles_deg=[92.74002462955757, 89.05549328520699, 85.56193688451268, 151.73614137474925, 120.90640199451411]\nchamfer_idx=(3, 4)\nmissing_corner_xy=(52.78461456298828, 62.0)\n
+label=TK\nbest_reason=poly4_direct\nconf=0.9568\npoly_n=4\n
