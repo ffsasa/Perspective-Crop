@@ -5,7 +5,7 @@ from ultralytics import YOLO
 # =========================
 # CONFIG
 # =========================
-MODEL_PATH = r"C:\Users\Admin\Downloads\PerspectiveCrop.v1i.yolov8\runs\segment\train2\weights\best.pt"
+MODEL_PATH = r"C:\Users\Admin\Downloads\PerspectiveCrop.v2i.yolov8\runs\segment\train\weights\best.pt"
 DEVICE = 0
 IMGSZ = 640
 CONF = 0.25
@@ -389,8 +389,16 @@ def detect_document(image_path, debug=True):
     if best_i is None:
         raise Exception("Không chọn được instance giấy hợp lệ")
 
-    best_mask = (masks[best_i] > 0.5).astype(np.uint8) * 255
-    best_mask = mask_postprocess(best_mask)
+    raw_mask = (masks[best_i] > 0.5).astype(np.uint8) * 255
+
+    # Resize mask về đúng size của small
+    best_mask = cv2.resize(
+        raw_mask,
+        (W, H),
+        interpolation=cv2.INTER_NEAREST
+    )
+
+    best_mask = mask_postprocess(best_mask)     
 
     # ---- quad from poly extend (4/5 corners) ----
     quad, poly, dbgpoly, reason = quad_from_mask_poly_extend(best_mask, eps_ratio=0.01, max_poly=12)
@@ -463,7 +471,7 @@ def detect_document(image_path, debug=True):
 
 
 if __name__ == "__main__":
-    warped, label = detect_document("input6.jpg", debug=True)
+    warped, label = detect_document("input26.jpg", debug=True)
     out_name = f"{label}.jpg"
     cv2.imwrite(out_name, warped)
     print("Detect + Perspective thành công ->", out_name)

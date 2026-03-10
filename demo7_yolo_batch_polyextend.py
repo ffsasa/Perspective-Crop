@@ -6,7 +6,7 @@ from ultralytics import YOLO
 # =========================
 # CONFIG
 # =========================
-MODEL_PATH = r"C:\Users\Admin\Downloads\PerspectiveCrop.v1i.yolov8\runs\segment\train2\weights\best.pt"
+MODEL_PATH = r"C:\Users\Admin\Downloads\PerspectiveCrop.v3i.yolov8\runs\segment\train\weights\best.pt"
 DEVICE = 0          # 0 = GPU, "cpu" nếu muốn CPU
 IMGSZ = 640
 CONF = 0.25
@@ -92,8 +92,8 @@ def four_point_transform(image, pts):
 def classify_center_color(bgr_img):
     h, w = bgr_img.shape[:2]
 
-    cx1, cx2 = int(w * 0.40), int(w * 0.60)
-    cy1, cy2 = int(h * 0.40), int(h * 0.60)
+    cx1, cx2 = int(w * 0.20), int(w * 0.80)
+    cy1, cy2 = int(h * 0.20), int(h * 0.80)
     patch = bgr_img[cy1:cy2, cx1:cx2]
 
     # Chuyển sang float
@@ -109,7 +109,7 @@ def classify_center_color(bgr_img):
     )
 
     # Nếu gần như không lệch màu → trắng → TK
-    return "TK" if color_variation < 25 else "XX"
+    return "TK" if color_variation < 20 else "XX"
 
 # =========================
 # Mask helpers (từ YOLO bản của bạn)
@@ -602,8 +602,17 @@ def detect_document(image_path, debug=False):
     if best_i is None:
         raise Exception("Không chọn được instance giấy hợp lệ")
 
-    best_mask = (masks[best_i] > 0.5).astype(np.uint8) * 255
+    raw_mask = (masks[best_i] > 0.5).astype(np.uint8) * 255
+
+    # Resize mask về đúng size của small
+    best_mask = cv2.resize(
+        raw_mask,
+        (W, H),
+        interpolation=cv2.INTER_NEAREST
+    )
+
     best_mask = mask_postprocess(best_mask)
+
     # ---- quad from poly extend (4/5 corners) ----
     best_q, poly, dbgpoly, best_reason = quad_from_mask_poly_extend(best_mask, eps_ratio=0.01, max_poly=12)
     if best_q is None:
@@ -713,15 +722,21 @@ def process_folder(input_root: str, output_root: str):
                         out_name = "TK.jpg"
                     elif tk_count == 2:
                         out_name = "TK2.jpg"
+                    elif tk_count == 3:
+                        out_name = "TK3.jpg"
                     else:
-                        raise Exception("Folder có nhiều hơn 2 ảnh TK")
+                        raise Exception("Folder có nhiều hơn 3 ảnh TK")
 
                 elif label == "XX":
                     xx_count += 1
                     if xx_count == 1:
                         out_name = "XX.jpg"
+                    elif xx_count == 2:
+                        out_name = "XX2.jpg"
+                    elif xx_count == 3:
+                        out_name = "XX3.jpg"
                     else:
-                        raise Exception("Folder có nhiều hơn 1 ảnh XX")
+                        raise Exception("Folder có nhiều hơn 3 ảnh XX")
                 else:
                     raise Exception(f"Nhãn lạ: {label}")
 

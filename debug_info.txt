@@ -1,1 +1,1 @@
-label=TK\nbest_reason=poly4_direct\nconf=0.9568\npoly_n=4\n
+label=XX\nbest_reason=poly4_direct\nconf=0.9385\npoly_n=4\n
